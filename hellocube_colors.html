@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8" />
-	<title>Hello WebGL</title>
+	<title>Hello WebGL rotate</title>
 	<meta name="generator" content="BBEdit 10.5" />
 
 <!-- load matrix manipulation helper methods -->	
@@ -18,7 +18,9 @@
     uniform sampler2D uSampler;
 
     void main(void) {
-        gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+        //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0); //green
+        //gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); //white
+        gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0); //yellow
     }
 </script>
 
@@ -117,6 +119,7 @@ function initGLScene()
         var fragmentShader = getShader(gl, "shader-fs");
         var vertexShader = getShader(gl, "shader-vs");
 
+        
         shaderProgram = gl.createProgram();
         gl.attachShader(shaderProgram, vertexShader);
         gl.attachShader(shaderProgram, fragmentShader);
@@ -137,6 +140,7 @@ function initGLScene()
         shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
         shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
         shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+        
     }
 
 
@@ -176,26 +180,28 @@ var cubeVertexIndexBuffer;
 
 function initGeometry()
  {
+
+        
         cubeVertexPositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
         vertices = [
             // Front face
-            0.0,  1.0,  0.0,
-            -1.0, -1.0,  0.0,
-             1.0, -1.0,  0.0,
-             -1.0, -1.0, -1.0,
+            -1.0, -1.0,  1.0,
+             1.0, -1.0,  1.0,
+             1.0,  1.0,  1.0,
+            -1.0,  1.0,  1.0,
 
             // Back face
-            0.0,  1.0,  0.0,
-            -1.0, -1.0,  0.0,
-             1.0, -1.0,  0.0,
+            -1.0, -1.0, -1.0,
+            -1.0,  1.0, -1.0,
+             1.0,  1.0, -1.0,
              1.0, -1.0, -1.0,
 
             // Top face
-            1.0,  1.0,  1.0,
-            1.0, 1.0,  1.0,
-             1.0, 1.0,  1.0,
-             1.0, 1.0, 1.0,
+            -1.0,  1.0, -1.0,
+            -1.0,  1.0,  1.0,
+             1.0,  1.0,  1.0,
+             1.0,  1.0, -1.0,
 
             // Bottom face
             -1.0, -1.0, -1.0,
@@ -204,16 +210,16 @@ function initGeometry()
             -1.0, -1.0,  1.0,
 
             // Right face
-            0.0,  1.0,  0.0,
-            -1.0, -1.0,  0.0,
-             1.0, -1.0,  0.0,
+             1.0, -1.0, -1.0,
+             1.0,  1.0, -1.0,
+             1.0,  1.0,  1.0,
              1.0, -1.0,  1.0,
 
             // Left face
-            0.0,  1.0,  0.0,
-            -1.0, -1.0,  0.0,
-             1.0, -1.0,  0.0,
-             -1.0, -1.0,  1.0,
+            -1.0, -1.0, -1.0,
+            -1.0, -1.0,  1.0,
+            -1.0,  1.0,  1.0,
+            -1.0,  1.0, -1.0,
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
         cubeVertexPositionBuffer.itemSize = 3;
@@ -223,21 +229,21 @@ function initGeometry()
         gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
         var textureCoords = [
           // Front face
-          0.0, 0.0,
-          1.0, 0.0,
           1.0, 1.0,
-          0.0, 1.0,
+          1.0, 1.0,
+          1.0, 1.0,
+          1.0, 1.0,
 
           // Back face
-          1.0, 0.0,
           1.0, 1.0,
-          0.0, 1.0,
-          0.0, 0.0,
+          1.0, 1.0,
+          1.0, 1.0,
+          1.0, 1.0,
 
           // Top face
-          0.0, 1.0,
-          0.0, 0.0,
-          1.0, 0.0,
+          1.0, 1.0,
+          1.0, 1.0,
+          1.0, 1.0,
           1.0, 1.0,
 
           // Bottom face
@@ -253,10 +259,10 @@ function initGeometry()
           0.0, 0.0,
 
           // Left face
-          0.0, 0.0,
-          1.0, 0.0,
-          1.0, 1.0,
-          0.0, 1.0,
+          0.5, 0.5,
+          1.5, 0.5,
+          1.5, 1.5,
+          0.5, 1.5,
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
         cubeVertexTextureCoordBuffer.itemSize = 2;
@@ -321,6 +327,7 @@ function startHelloWebGL()
    Frames();
    // If doing an animation need to add code to rotate our geometry
    
+   
 }
 
 // This function draws a basic webGL scene
@@ -329,7 +336,7 @@ function startHelloWebGL()
 // OpenGL has convenience methods for this such as glPerspective().
 // finally we call the gl draw methods to draw our defined geometry objects.
    var xRot = 0;
-    var yRot = 90;
+    var yRot = 0;
     var zRot = 0;
 
     function drawScene() {
@@ -342,9 +349,9 @@ function startHelloWebGL()
 
         mat4.translate(mvMatrix, [0.0, 0.0, -5.0]);
 
-        mat4.rotate(mvMatrix, xRot/180.0*3.1415, [1, 0, 0]);
+        //mat4.rotate(mvMatrix, xRot/180.0*3.1415, [1, 0, 0]);
         mat4.rotate(mvMatrix, yRot/180.0*3.1415, [0, 1, 0]);
-
+        //mat4.rotate(mvMatrix, zRot/180.0*3.1415, [0, 0, 1]);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
         gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
@@ -370,8 +377,10 @@ function startHelloWebGL()
             var elapsed = timeNow - lastTime;
 
             // here we could change variables to adjust rotations for animation
-            xRot += 1;
-            yRot += 1;
+            xRot += 5;
+            yRot -= .5;
+            zRot += 5;
+
         }
         lastTime = timeNow;
     }
