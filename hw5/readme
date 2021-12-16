@@ -1,0 +1,26 @@
+Austen Hale
+CS464
+HW5
+
+List of files:
+
+    hellocube_hw5.html - The main file with all the code to create the solar system.
+    [planetname.jpg/png] - a file that is used as a texture for the respective planet
+
+Awesome WebGL functions:
+    I didn't use any WebGL functions that were out of the ordinary.
+
+Extra credit:
+    I added all the planets since it wasn't much more work.
+
+Misc:
+    For the most part, this assignment went well. It did take some time to figure out how to do the multiple textures, but eventually I got it.
+
+    I did have a few issues, such as: the planets aren't completely spheres and I couldn't figure out why, and due to the textures the browser crashes
+    after running for a minute or so. Unfortunately I couldn't find a way to fix these issues. Another issue I had that isn't part of the requirements
+    but is something I wanted to do was to make the planets start at different areas around the Sun. However, I could only make it where they
+    started on different sides instead of all around, so I just opted to keep them all starting on one side.
+
+    Sources used:
+    https://webglfundamentals.org/webgl/lessons/webgl-2-textures.html
+    https://webglfundamentals.org/webgl/lessons/webgl-2d-matrix-stack.html

@@ -1,0 +1,23 @@
+Austen Hale
+CS464
+HW4
+
+List of files:
+
+    hellocube_hw4.html - This is the main file that contains all the code in the assignment.
+    hw4_fract.png - a picture showing the box with the fract color source
+    hw4_fractphonglight.png - a picture showing fract color source with phong lighting
+    hw4_mathcolor.png - a picture showing the box with max color source
+    hw4_phonglight.png - a picture showing the box with a phong light
+
+Awesome WebGL functions:
+    I found a function that could be used to calculate a noise texture here: https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+
+Extra credit:
+    Not attempted.
+
+Misc:
+    This assignment was a bit harder than the previous ones. I couldn't get all the options to work 100%, but 
+    I feel like I got a good start to most of them. Phong shading doens't seem to work, and I don't
+    believe that any of the lighting options are really correct, but they do change which is nice.
+    The bump option doesn't work, as I wasn't entirely sure what to do for it.

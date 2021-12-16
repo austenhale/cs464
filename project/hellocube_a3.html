@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Hello WebGL</title>
+	<meta name="generator" content="BBEdit 10.5" />
+
+<!-- load matrix manipulation helper methods -->	
+<script type="text/javascript" src="glMatrix_util.js"></script>
+<script type="text/javascript" src="webgl-utils.js"></script>
+
+<!-- define our shaders -->
+<script id="shader-fs" type="x-shader/x-fragment">
+    // <![CDATA[
+    #ifdef GL_ES
+    precision highp float;
+    #endif
+
+    varying vec3 fpos;
+    varying vec3 fcol;
+
+    void main(void) {
+        float dst = length(fpos);
+        float fact = dst<2. ? 1. : (2./dst-0.2)/0.8;
+        gl_FragColor = vec4(fcol*fact, 1.);
+    }
+    //]]>
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 vpos;
+    attribute vec3 vcol;
+
+    uniform vec3 opos;
+    uniform mat4 pmat;
+    uniform mat4 rmat;
+
+    varying vec3 fpos;
+    varying vec3 fcol;
+
+    void main(void) {
+        fpos = vpos - opos;
+        fcol = vcol;
+        gl_Position = pmat * rmat * vec4(fpos,1.);
+    }
+</script>
+
+	
+<script> <!-- define Javascript functions for drawing WebGL items -->
+
+var xsize = 24;
+var ysize = 24;
+var zsize = 8;
+
+// For each maze cell, an integer indicating which directions one can go from here
+// (bit 0 = east (x+1), bit 1 = north (y+1), bit 2 = west (x-1), bit 3 = south (y-1)),
+// plus extra bits for slopes (bits 4&5 the offset _downwards_ in thirds (1 through 3),
+// bits 6&7 the downwards slope direction (0=E, 1=N, 2=W, 3=S),
+// and bit 8 whether this is the bottom half/layer of the stairs).
+var maze;
+
+// The color theme.
+var mazeDeco;
+
+function allocMaze() {
+    "use strict";
+    maze = new Array(xsize);
+    mazeDeco = new Array(xsize);
+    for ( var x=0 ; x<xsize ; x++ ) {
+        maze[x] = new Array(ysize);
+        mazeDeco[x] = new Array(ysize);
+        for ( var y=0 ; y<ysize ; y++ ) {
+            maze[x][y] = new Array(zsize);
+            mazeDeco[x][y] = new Array(zsize);
+        }
+    }
+}
+
+function digMaze() {
+    "use strict";
+//    console.log("Digging the maze...");
+    // Construct the maze by digging it as a tree:
+    var stack = [];  // Visited positions (not really a stack: we fetch items at random)
+    var xpos = Math.floor(xsize/2);
+    var ypos = Math.floor(ysize/2);
+    var zpos = 0;
+    maze[xpos][ypos][zpos] = 0;
+    stack.push({x:xpos,y:ypos,z:zpos,
+                d:[],preferDir:1,forceDir:true}); // Force initial dir to north
+    while (stack.length>0) {
+        // Choose a visited position at random:
+        var idx = Math.floor(Math.random()*stack.length);
+        var t = stack[idx];  stack[idx] = stack[stack.length-1];  stack[stack.length-1] = t;
+        xpos = t.x;  ypos = t.y;  zpos = t.z;
+        if ( typeof(maze[xpos][ypos][zpos]) != "number" )
+            throw new Error("This is impossible");
+        if ( t.d.length < 4 ) { // There is still a direction we haven't dug from here.
+            var dir;
+            do { // Choose direction to dig into:
+                if ( typeof(t.preferDir) == "undefined" || ( Math.random()<0.2 && ! t.forceDir ) )
+                    dir = Math.floor(Math.random()*4);  // Change direction.
+                else
+                    dir = t.preferDir;  // Continue in previous direction.
+            } while (t.d.indexOf(dir)>=0);
+            var dx = ([1,0,-1,0])[dir];
+            var dy = ([0,1,0,-1])[dir];
+            var dz = 0;
+            if ( Math.random()<0.05 ) {  // Maybe dig a slope?
+                var free = true;
+                // Choose whether we dig up or down:
+                if ( typeof(t.preferDz) == "undefined" || Math.random()<0.4 )
+                    dz = Math.random()<0.5 ? 1 : -1;
+                else
+                    dz = t.preferDz;
+                // Now check whether we have some free squares to dig this slope:
+                if ( zpos+dz < 0 || zpos+dz >= zsize ) {
+                    dz = 0;
+                    free = false;
+                } else {
+                    for ( var ii=1 ; ii<=4 ; ii++ ) {
+                        var x2 = xpos + dx*ii;
+                        var y2 = ypos + dy*ii;
+                        if ( x2<0 || x2>=xsize || y2<0 || y2>=ysize
+                             || ( ii<4 && typeof(maze[x2][y2][zpos]) != "undefined" )
+                             || typeof(maze[x2][y2][zpos+dz]) != "undefined" ) {
+                            dz = 0;
+                            free = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if ( dz ) {  // Dig a slope:
+                t.d.push(dir);  // Mark this direction as done from this visited source.
+                t.preferDir = undefined;
+                var opdir = ([2,3,0,1])[dir];  // Opposite direction
+                var slope = dz<0 ? dir : opdir;  // Direction of downwards slope
+                var walls = ([5,10,5,10])[dir];  // (Never branch off a slope!)
+                for ( var ii=1 ; ii<4 ; ii++ ) {  // The three slope squares proper
+                    var x2 = xpos + dx*ii;
+                    var y2 = ypos + dy*ii;
+                    var voff = dz<0 ? ii : 4-ii;
+                    if ( typeof(maze[x2][y2][zpos]) != "undefined"
+                         || typeof(maze[x2][y2][zpos+dz]) != "undefined" )
+                        throw new Error("This is impossible");
+                    maze[x2][y2][zpos] = walls | (voff<<4) | (slope<<6) | ((dz>0)<<8);
+                    maze[x2][y2][zpos+dz] = walls | (voff<<4) | (slope<<6) | ((dz<0)<<8);
+                }
+                // The square at the end of the slope:
+                var xnpos = xpos + dx*4;
+                var ynpos = ypos + dy*4;
+                maze[xpos][ypos][zpos] |= (1<<dir);
+                if ( typeof(maze[xnpos][ynpos][zpos+dz]) != "undefined" )
+                    throw new Error("This is impossible");
+                maze[xnpos][ynpos][zpos+dz] = (1<<opdir);
+                stack.push({x:xnpos,y:ynpos,z:zpos+dz,d:[opdir],preferDir:dir,preferDz:dz});
+            } else {  // Dig horizontally:
+                t.d.push(dir);  // Mark this direction as done from this visited source.
+                t.preferDir = undefined;
+                // The new square to dig into:
+                var xnpos = xpos + dx;
+                var ynpos = ypos + dy;
+                var opdir = ([2,3,0,1])[dir];  // Opposite direction
+                if ( xnpos >= 0 && ynpos >= 0 && xnpos < xsize && ynpos < ysize
+                     && typeof(maze[xnpos][ynpos][zpos]) == "undefined" ) {
+                    // A new square has been dug into.
+                    maze[xpos][ypos][zpos] |= (1<<dir);
+                    maze[xnpos][ynpos][zpos] = (1<<opdir);
+                    stack.push({x:xnpos,y:ynpos,z:zpos,d:[opdir],preferDir:dir,preferDz:t.preferDz});
+                }
+            }
+        } else {
+            // Stuck: backtrack from here.
+            stack.pop();
+        }
+    }
+}
+
+var nbdecos = 16;  // Number of seeds for maze deco
+var gl;
+var Gpixels;
+var distance = 45;
+var cameraSpeed;
+var cameraPosition;
+var cameraAngle;
+var cameraTranslate;
+var loaded;
+var cameraVMat;
+var up;
+var obsx, obsy, obsz;  // Observer position (including fractional part)
+var xs, ys, zs;  // Integer part (floor) of observer position, determines square of maze
+var obsth;  // Observer orientation, in degrees counterclockwise from north
+var obsu, obsv;  // Cosine and sine of the above
+var exited;  // Left the maze?
+var pmatUniform, rmatUniform, oposUniform;  // Uniform variables
+var vposAttribute, vcolAttribute;  // Attributes
+var vposBuffer, vcolBuffer;  // Buffers for attribute data
+
+var fScale = 0.95;  // Determines angle of vision
+var dNear = 0.05;  // Near clipping plane of vision frustrum
+var dFar = 10;  // Far clipping plane of vision frustrum
+
+obsx = Math.floor(xsize/2) + 0.5;
+obsy = Math.floor(ysize/2) + 0.5;
+obsz = 0.5;
+xs = Math.floor(obsx);
+ys = Math.floor(obsy);
+zs = Math.floor(obsz);
+obsth = 0;
+exited = false;
+
+// Color themes for floors, ceilings and walls:
+var floorColors = [[.6,.4,.2], [.35,.3,.3], [.3,.0,.0], [.4,.5,.0], [.6,.0,.0], [.6,.0,.4], [.4,.3,.1], [.1,.0,.0]];
+var ceilColors = [[.2,.2,.9], [.7,.7,.75], [.2,.3,.4], [.1,.1,.7], [.5,.5,.7], [.2,.6,.6], [.6,.6,.75], [.4,.4,.4]];
+var wallColors = [[.5,.5,.5], [.5,.5,.5], [.4,.5,.45], [.6,.5,.4], [.4,.5,.5], [.45,.55,.45], [.5,.55,.65], [.6,.6,.4]];
+var wallSineX, wallSineY;
+
+function initWebGLContext(aname) {
+  gl = null;
+  canvas = document.getElementById(aname);
+  try {
+    // Try to grab the standard context. If it fails, fallback to experimental.
+    gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+  }
+  catch(e) {}
+  
+  // If we don't have a GL context, give up now
+  if (!gl) {
+    alert("Unable to initialize WebGL. Your browser may not support it.");
+    gl = null;
+  }
+  gl.viewportWidth = canvas.width;
+  gl.viewportHeight = canvas.height;
+  return gl;
+}
+// define the function to initial WebGL and Setup Geometry Objects
+function initGLScene()
+{
+    // Initialize the WebGL Context - the gl engine for drawing things.
+    var gl = initWebGLContext("hellowebgl"); // The id of the Canvas Element
+        if (!gl) // if fails simply return
+     {
+          return;
+     }
+     // succeeded in initializing WebGL system
+     return gl;     
+}
+
+
+   function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+
+    var shaderProgram;
+
+    function initShaders() {
+        // Create the shaders.
+    fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader, document.getElementById("shader-fs").textContent);
+    gl.compileShader(fragmentShader);
+    if ( !gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS) ) {
+        alert("An error occurred while compiling the fragment shader: " + gl.getShaderInfoLog(fragmentShader));
+        throw new Error("Failed to compile fragment shader");
+    }
+    vertexShader = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vertexShader, document.getElementById("shader-vs").textContent);
+    gl.compileShader(vertexShader);
+    if ( !gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS) ) {
+        alert("An error occurred while compiling the vertex shader: " + gl.getShaderInfoLog(vertexShader));
+        throw new Error("Failed to compile vertex shader");
+    }
+    shaderProg = gl.createProgram();
+    gl.attachShader(shaderProg, fragmentShader);
+    gl.attachShader(shaderProg, vertexShader);
+    gl.linkProgram(shaderProg);
+    if ( !gl.getProgramParameter(shaderProg, gl.LINK_STATUS) ) {
+        alert("An error occurred while linking the shaders");
+        throw new Error("Failed to link shaders");
+    }
+    gl.useProgram(shaderProg);
+
+    // Clear the canvas.
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0., 0., 0., 1.);
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Set up uniforms.
+    pmatUniform = gl.getUniformLocation(shaderProg, "pmat");  // Projection matrix
+    gl.uniformMatrix4fv(pmatUniform, false, new Float32Array([
+      fScale*canvas.height/canvas.width,0.,0.,0.,
+      0.,0.,(dFar+dNear)/(dFar-dNear),1.,
+      0.,fScale,0.,0.,
+      0.,0.,-2*dFar*dNear/(dFar-dNear),0.,
+    ]));
+    rmatUniform = gl.getUniformLocation(shaderProg, "rmat");  // Rotation matrix
+    gl.uniformMatrix4fv(rmatUniform, false, new Float32Array([
+      1.,0.,0.,0.,
+      0.,1.,0.,0.,
+      0.,0.,1.,0.,
+      0.,0.,0.,1.,
+    ]));
+    oposUniform = gl.getUniformLocation(shaderProg, "opos");
+    gl.uniform3fv(oposUniform, [0., 0., 0.]);
+
+    // Set up attributes.
+    vposAttribute = gl.getAttribLocation(shaderProg, "vpos");
+    gl.enableVertexAttribArray(vposAttribute);
+    vposBuffer = gl.createBuffer();
+    vcolAttribute = gl.getAttribLocation(shaderProg, "vcol");
+    gl.enableVertexAttribArray(vcolAttribute);
+    vcolBuffer = gl.createBuffer();
+    }
+
+
+
+// create our basic model and view matrix
+var mvMatrix = mat4.create();
+var mvMatrixStack = [];
+// create our projection matrix for projecting from 3D to 2D.
+var pMatrix = mat4.create();
+
+ function mvPushMatrix() {
+        var copy = mat4.create();
+        mat4.set(mvMatrix, copy);
+        mvMatrixStack.push(copy);
+    }
+
+    function mvPopMatrix() {
+        if (mvMatrixStack.length == 0) {
+            throw "Invalid popMatrix!";
+        }
+        mvMatrix = mvMatrixStack.pop();
+    }
+
+function setMatrixUniforms()
+{
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+
+        var normalMatrix = mat3.create();
+        mat4.toInverseMat3(mvMatrix, normalMatrix);
+        mat3.transpose(normalMatrix);
+        gl.uniformMatrix3fv(shaderProgram.tnMatrixUniform, false, normalMatrix);
+}
+
+
+
+
+// create and initialize our geometry objects
+var terVertexPositionBuffer;
+var terVertexTextureCoordBuffer;
+var terVertexIndexBuffer;
+var terNormalBuffer;
+
+function initGeometry()
+ {
+        terVertexPositionBuffer = gl.createBuffer();
+        // gl.bindBuffer(gl.ARRAY_BUFFER, terVertexPositionBuffer);
+
+        vertices = [];
+
+        nvertices = [];
+        for (i = 0; i < 100; i++){
+            for (j = 0; j < 100; j++){
+                vertices[0 + j*3 + i*100*3] = (j*1.0)/50.0 - 1.0;
+                vertices[1 + j*3 + i*100*3] = Math.random() * (1 - -1 + 1) + -1;
+                vertices[2 + j*3 + i*100*3] = (i*1.0)/50.0 - 1.0;
+
+                nvertices[0 + j*3 + i*100*3] = 0.0;
+                nvertices[1 + j*3 + i*100*3] = 1.0;
+                nvertices[2 + j*3 + i*100*3] = 0.0;
+            }
+        }
+        // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        terVertexPositionBuffer.itemSize = 3;
+        terVertexPositionBuffer.numItems = 100*100;
+
+        terNormalBuffer = gl.createBuffer();
+        // gl.bindBuffer(gl.ARRAY_BUFFER, terNormalBuffer);
+
+        // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nvertices), gl.STATIC_DRAW);
+        terNormalBuffer.itemSize = 3;
+        terNormalBuffer.numItems = 100*100;
+
+        terVertexTextureCoordBuffer = gl.createBuffer();
+        // gl.bindBuffer(gl.ARRAY_BUFFER, terVertexTextureCoordBuffer);
+        textureCoords = [];
+        tc = 0;
+        for ( i = 0; i < 100; i++){
+            for (j = 0; j < 100; j++){
+                textureCoords[tc++] = 0.0 + (j*1.0)/100;
+                textureCoords[tc++] = 0.0 + (i*1.0)/100;
+            }
+        }
+
+        // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        terVertexTextureCoordBuffer.itemSize = 2;
+        terVertexTextureCoordBuffer.numItems = tc;
+
+        terVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terVertexIndexBuffer);
+        terVertexIndices = [];
+        tvi = 0;
+        for (i = 0; i < 99; i++){
+            for (j = 0; j < 99; j++){
+                terVertexIndices[tvi++] = 0+j+i*100;
+                terVertexIndices[tvi++] = 1+j+i*100;
+                terVertexIndices[tvi++] = 0+j+(i+1)*100;
+
+                terVertexIndices[tvi++] = 0+j+(i+1)*100;
+                terVertexIndices[tvi++] = 1+j+(i+1)*100;
+                terVertexIndices[tvi++] = 1+j+i*100;
+            }
+        }
+
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(terVertexIndices), gl.STATIC_DRAW);
+        terVertexIndexBuffer.itemSize = 1;
+        terVertexIndexBuffer.numItems = tvi;
+    }
+    
+
+
+// Initialize our texture data and prepare it for rendering
+var exTexture;
+function initTextures()
+{
+    exTexture = gl.createTexture();
+    exTexture.image = cameraImage;
+    // exTexture.image.crossOrigin = "anonymous";
+    
+    exTexture.image.onload = function() {
+      handleLoadedTexture(exTexture)
+    };
+    
+    exTexture.image.src = "maze.jpg";
+  }
+
+function handleLoadedTexture(texture)
+{
+    
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    
+    // allocate the array for holding the RBGA pixel data
+    var width = texture.image.width;
+    var height = texture.image.height;
+    Gpixels = new Uint8Array(4 * width * height);
+
+    // here we use a framebuffer as an offscreen render object
+    // draw the texture into it and then copy the pixel values inot a local array
+	var framebuffer = gl.createFramebuffer();
+	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+	
+
+	if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) 
+		gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, Gpixels);
+        
+	loaded = 1; 
+
+	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	
+    
+  }
+
+//Initialize everything for starting up a simple webGL application
+function startHelloWebGL()
+{
+   // attach 'Handler' functions to handle events generated by the canvas.
+   // for when the browser is resized or closed.
+
+   // first initialize webgl components 
+   var gl = initGLScene();
+   
+   //camera
+   cameraSpeed = 0.0;
+   cameraPosition = [0.0, 0.4, -1.0];
+   cameraAngle = 0.0;
+   cameraTranslate = [0.0, 0.4, 0.0];
+   cameraVMat = mat4.lookAt([0.0, 0.01, 0.0], [0.0,0.01,1.0], [0.0, 1.0, 0.0]);
+   cameraImage = new Image();
+   up = [0.0, 1.0, 0.0];
+   // The maze's exit is on the south wall of the top layer (y==0, z==zsize-1)
+   exitX = Math.floor(Math.random()*xsize);
+   allocMaze();
+   digMaze();
+   computeUV();
+   loadViewPoint();
+   computeWallSine();
+
+   // now build basic geometry objects.
+   initShaders();
+   initGeometry();
+   initTextures();
+
+   // Draw the Scene
+   Frames();
+
+   redraw();
+   // showPosition();
+   // showHeading();
+   // formatNumber();
+   
+    
+
+   var acanvas = document.getElementById("hellowebgl");
+   acanvas.onmousedown = handleMouseDown;
+   acanvas.addEventListener("wheel", mouseWheelEvent, {passive: false});
+   document.onmouseup = handleMouseUp;
+   document.onmousemove = handleMouseMove;
+   document.addEventListener('keypress', handleCamera);
+   document.addEventListener('keyup', stopMove);
+
+   gl.clearColor(0.4,0.4,0.4,1.0);
+   gl.enable(gl.DEPTH_TEST);
+   
+   // If doing an animation need to add code to rotate our geometry
+   
+}
+function mouseWheelEvent(event) {
+    var x = event.offsetX;
+    var y = event.offsetY;
+    if (event.deltaY < 0) { distance -= 2;}
+    else { distance += 2;}
+    event.preventDefault();
+}
+function degToRad(degrees) {
+    return degrees * Math.PI / 180;
+}
+var mouseDown = false;
+var lastMouseX = null;
+var lastMouseY = null;
+var objRotationMatrix = mat4.create();
+mat4.identity(objRotationMatrix);
+
+function handleMouseDown(event) {
+    mouseDown = true;
+    lastMouseX = event.clientX;
+    lastMouseY = event.clientY;
+    // cameraSpeed = -0.005;
+    
+}
+
+function handleMouseUp(event) {
+    // cameraSpeed = 0.005;
+    mouseDown = false;
+}
+
+function handleMouseMove(event) {
+    if (!mouseDown) {
+        return;
+    }
+    var newX = event.clientX;
+    var newY = event.clientY;
+    
+    var deltaX = newX - lastMouseX;
+    var newRotationMatrix = mat4.create();
+    mat4.identity(newRotationMatrix);
+    mat4.rotate(newRotationMatrix, degToRad(deltaX / 10), [0, 1, 0]);
+    cameraAngle += deltaX;
+    var deltaY = newY - lastMouseY;
+
+    mat4.rotate(newRotationMatrix, degToRad(deltaY / 10), [1,0, 0]);
+
+    mat4.multiply(newRotationMatrix, objRotationMatrix, objRotationMatrix);
+
+    lastMouseX = newX
+    lastMouseY = newY;
+
+}
+
+function handleCamera(e) {
+    //https://stackoverflow.com/questions/1846599/how-to-find-out-what-character-key-is-pressed
+    var keynum = e.which;
+
+    var direction = String.fromCharCode(keynum);
+    //decide direction based off keypress
+    switch (direction) {
+        case 'w':
+            cameraSpeed = 0.005;
+            console.log('forward');
+            console.log(cameraPosition);
+            break;
+        case 'd':
+            if (cameraPosition[2] < 0 && cameraPosition[2] >= -1) {
+                cameraTranslate[0] -= 0.005;
+                cameraTranslate[2] -= 0.005;
+            } else {
+                cameraTranslate[0] += 0.005;
+                cameraTranslate[2] += 0.005;
+            }
+            
+            console.log('right');
+            break;
+        case 's':
+            cameraSpeed = -0.005;
+            console.log('backward');
+            break;
+        case 'a':
+            if (cameraPosition[2] >= 0 && cameraPosition[2] <= 1){
+                cameraTranslate[0] -= 0.005;
+                cameraTranslate[2] -= 0.005;
+            } else {
+                cameraTranslate[0] += 0.005;
+                cameraTranslate[2] += 0.005;
+            }
+            console.log('left');
+            break;
+    }
+}
+function stopMove(e) {
+    var keynum = e.which;
+    var stop = String.fromCharCode(keynum);
+    if (stop.toUpperCase() == 'W' || stop.toUpperCase() == 'S')
+        cameraSpeed = 0.0;
+}
+
+//this function creates a view matrix using the javascript mat4 library.
+//the mat4.lookAt function is used which calculates the Model space
+//to view space transformation matrix
+function genViewMatrix() {
+    cameraTranslate[0] = cameraTranslate[0] + (cameraSpeed * cameraPosition[0]); //x
+    cameraTranslate[2] = cameraTranslate[2] + (cameraSpeed * cameraPosition[2]); //z
+
+    cameraTranslate[1] = getTerrianHeight(cameraTranslate[0], cameraTranslate[2]); //y based on height
+    // console.log(cameraTranslate[1]);
+    var currentNormal = getNormal(cameraTranslate[0], cameraTranslate[2]);
+
+    cameraPosition = getCameraDirection(currentNormal);
+    
+    var target = [0.0, 0.4, -1.0];
+    target[0] = cameraTranslate[0] + cameraPosition[0];
+    target[1] = cameraTranslate[1] + cameraPosition[1]/100.0;
+    target[2] = cameraTranslate[2] + cameraPosition[2];
+
+
+    viewMatrix = mat4.lookAt(cameraTranslate, target,currentNormal, cameraVMat);
+    return viewMatrix;
+
+}
+function getNormal(xTranslate, zTranslate) {
+    var newNormal = vec3.create();
+
+    newNormal[0] = 0.0;
+    newNormal[1] = 1.0;
+    newNormal[2] = 0.0;
+
+    var stepsize = 10.0/100.0;
+    var triangleHeight = getTriHeight(xTranslate, zTranslate);
+    var direction1 = vec3.create();
+    var direction2 = vec3.create();
+    var direction3 = vec3.create();
+
+    direction1[0] = 0.0;
+    direction1[1] = triangleHeight[0];
+    direction1[2] = 0.0;
+
+    direction2[0] = stepsize;
+    direction2[1] = triangleHeight[1];
+    direction2[2] = 0.0;
+
+    direction3[0] = 0.0;
+    direction3[1] = triangleHeight[2];
+    direction3[2] = stepsize;
+    // https://gamedev.stackexchange.com/questions/152991/how-can-i-calculate-normals-using-a-vertex-and-index-buffer
+    var direction_2_1 = vec3.subtract(direction2, direction1);
+    var direction_3_1 = vec3.subtract(direction3, direction1);
+    var direction = vec3.cross(direction_2_1, direction_3_1);
+
+    direction = vec3.normalize(direction);
+    if (direction[1] > 0)
+        direction[1] *= -1;
+    up = direction;
+    return direction;
+}
+function getCameraDirection(normal) {
+    var rotationMatrix = mat4.create();
+    mat4.identity(rotationMatrix);
+    mat4.rotate(rotationMatrix, -(cameraAngle * Math.PI /100), normal);
+
+    var direction = (normal[0] * cameraTranslate[0] + normal[1] * cameraTranslate[1] + normal[2] * cameraTranslate[2]);
+
+    var deltaY = (direction + normal[0] * cameraTranslate[0] + normal[2] * (cameraTranslate[2]+ 10.0))/normal[1];
+
+    var adirection = vec3.create();
+    adirection[0] = 0.0;
+    adirection[1] = deltaY - cameraTranslate[1];
+    adirection[2] = 1.0;
+
+    adirection = vec3.normalize(adirection);
+    adir = mat4.multiplyVec3(rotationMatrix, adirection);
+
+    return adir;
+}
+
+
+//this function returns the height of the terrain for a given x,z position
+// x and z are in range [-1, 1]
+function getTerrianHeight(x, z) {
+    x = Math.floor((x+1)/3.0 * cameraImage.width);
+    z = Math.floor((z+1)/3.0 * cameraImage.height);
+    if (x >= cameraImage.width) x = cameraImage.width;
+    if (z >= cameraImage.height) z = cameraImage.height;
+
+
+            var res = 0.09;
+            if (loaded == 1)
+            {
+                var aoffset = Math.round(x * 4 + z*cameraImage.width*4);
+                var r = Gpixels[0 + aoffset];
+                var g = Gpixels[1 + aoffset];
+                var b = Gpixels[2 + aoffset];
+
+                var aval = Math.sqrt(r * r + g * g + b * b)/441.673;
+                aval = aval*4/10.0; //prevents camera from being upside down
+                res += aval;
+                return res;
+            }
+
+            return 0.0;
+        
+}
+
+// using same ideas as getTerrianHeight, can get triangle height
+function getTriHeight(x, z) {
+    x = Math.floor((x+1)/3.0 * cameraImage.width);
+    z = Math.floor((z+1)/3.0 * cameraImage.height);
+
+    if (x >= cameraImage.width) x = cameraImage.width;
+    if (z >= cameraImage.height) z = cameraImage.height;
+
+    var resbase = 0.09;
+    var res = vec3.create();
+    if (loaded == 1) {
+        for (i = 0; i < 3; i ++) {
+            var aoffset;
+
+            if (i == 0) 
+                aoffset = Math.round(x * 4 + z*cameraImage.width*4);
+            if (i == 1)
+                aoffset = Math.round((x+1) * 4 + z*cameraImage.width*4);
+            if (i == 2)
+                aoffset = Math.round(x * 4 + (z+1)*cameraImage.width*4);
+
+            var r = Gpixels[0 + aoffset];
+            var g = Gpixels[1 + aoffset];
+            var b = Gpixels[2 + aoffset];
+
+            var aval = Math.sqrt(r * r + g * g + b * b)/441.673;
+            aval *= 4/10.0;
+            res[i] = resbase + aval;
+
+        }
+    }
+    return res;
+}
+// This function draws a basic webGL scene
+// first it clears the framebuffer.
+// then we define our View positions for our camera using WebGL matrices.
+// OpenGL has convenience methods for this such as glPerspective().
+// finally we call the gl draw methods to draw our defined geometry objects.
+   var xRot = 0;
+    var yRot = 0;
+    var zRot = 0;
+
+    // The triangles fed to OpenGL: we examine 21*21*5 cells, 6 walls per cell, 2 triangles per wall.
+var maxtriangles = 21*21*5*6*2;
+var nbtriangles;
+
+// Coordinates and colors of triangles:
+var vpos = new Float32Array(maxtriangles*9);
+var vcol = new Float32Array(maxtriangles*9);
+
+    function drawScene() {
+        "use strict";
+    nbtriangles = 0;
+    function addSquare(x0,y0,z0,d1x,d1y,d1z,d2x,d2y,d2z,r,g,b) {
+        "use strict";
+        // Try to make this function easily optimizable...
+        x0 = +x0;  y0 = +y0;  z0 = +z0;
+        d1x = +d1x;  d1y = +d1y;  d1z = +d1z;
+        d2x = +d2x;  d2y = +d2y;  d2z = +d2z;
+        r = +r;  g = +g;  b = +b;
+        var nbt = nbtriangles|0;
+        vpos[nbt*9] = x0;
+        vpos[nbt*9+1] = y0;
+        vpos[nbt*9+2] = z0;
+        vpos[nbt*9+3] = x0+d1x;
+        vpos[nbt*9+4] = y0+d1y;
+        vpos[nbt*9+5] = z0+d1z;
+        vpos[nbt*9+6] = x0+d2x;
+        vpos[nbt*9+7] = y0+d2y;
+        vpos[nbt*9+8] = z0+d2z;
+        vpos[nbt*9+9] = x0+d2x;
+        vpos[nbt*9+10] = y0+d2y;
+        vpos[nbt*9+11] = z0+d2z;
+        vpos[nbt*9+12] = x0+d1x;
+        vpos[nbt*9+13] = y0+d1y;
+        vpos[nbt*9+14] = z0+d1z;
+        vpos[nbt*9+15] = x0+d1x+d2x;
+        vpos[nbt*9+16] = y0+d1y+d2y;
+        vpos[nbt*9+17] = z0+d1z+d2z;
+        for ( var i=0 ; i<6 ; i++ ) {
+            vcol[nbt*9+i*3] = r;
+            vcol[nbt*9+i*3+1] = g;
+            vcol[nbt*9+i*3+2] = b;
+        }
+        nbtriangles = nbt + 2;
+    }
+    function lc(l,x) {
+        "use strict";
+        // A helper function for modulating wall color
+        l = +l;
+        x = +x;
+        if ( l<0. )
+            return +(x*(1.+l));
+        else
+            return +(1. - (1.-x)*(1.-l));
+    }
+    // The cell region we scan:
+    var imin = Math.max(0,xs-10);  var imax=Math.min(xsize,xs+11);
+    var jmin = Math.max(0,ys-10);  var jmax=Math.min(ysize,ys+11);
+    var kmin = Math.max(0,zs-2);   var kmax=Math.min(zsize,zs+3);
+    for ( var i=imin ; i<imax ; i++ ) {
+        for ( var j=jmin ; j<jmax ; j++ ) {
+            for ( var k=kmin ; k<kmax ; k++ ) {
+                var voff = (maze[i][j][k]>>4)&3;  // Vertical offset downwards
+                var slant = !!voff;
+                var slope = (maze[i][j][k]>>6)&3;  // Direction of downwards slope
+                var isbothalf = (maze[i][j][k]>>8)&1;  // Is this a bottom half?
+                var swdz = slant ? -(voff-(slope<2))/3 : 0;  // Vertical offset of SW corner
+                var edz = slant ? (([-1,0,1,0])[slope])/3 : 0;  // Vertical diff east
+                var ndz = slant ? (([0,-1,0,1])[slope])/3 : 0;  // Vertical diff north
+                var deco = mazeDeco[i][j][k] % (floorColors.length);  // Decoration
+                if ( ! deco )
+                    deco = 0;
+                // Floor:
+                if ( ! isbothalf )
+                    addSquare(i,j,k+swdz,
+                              1,0,edz,0,1,ndz,
+                              floorColors[deco][0]+([0,.05])[(i+j)%2],
+                              floorColors[deco][1]+([0,.05,.05])[i%3],
+                              floorColors[deco][2]+([0,.05,.05])[j%3]);
+                // Ceiling:
+                if ( ! isbothalf )
+                    addSquare(i,j,k+1+swdz,
+                              0,1,ndz,1,0,edz,
+                              ceilColors[deco][0]+([0,.05])[i%2],
+                              ceilColors[deco][1]+([0,.05])[j%2],
+                              ceilColors[deco][2]+([0,0,.05])[(i+j)%3]);
+                // Walls:
+                var l;
+                var sideColor = wallColors[deco];
+                // East wall
+                l = wallSineX[2*i+2] * wallSineY[2*j+1];
+                if ( (i<xsize) ? (! (maze[i][j][k]&1)) : 1 )
+                    addSquare(i+1,j,k,0,0,1,0,1,0,
+                              lc(l,sideColor[0]),lc(l,sideColor[1]),lc(l,sideColor[2]));
+                // North wall
+                l = wallSineX[2*i+1] * wallSineY[2*j+2];
+                if ( (j<ysize) ? (! (maze[i][j][k]&2)) : 1 )
+                    addSquare(i,j+1,k,1,0,0,0,0,1,
+                              lc(l,sideColor[0]),lc(l,sideColor[1]),lc(l,sideColor[2]));
+                // West wall
+                l = wallSineX[2*i] * wallSineY[2*j+1];
+                if ( (i<xsize) ? (! (maze[i][j][k]&4)) : 1 )
+                    addSquare(i,j,k,0,1,0,0,0,1,
+                              lc(l,sideColor[0]),lc(l,sideColor[1]),lc(l,sideColor[2]));
+                // South wall
+                l = wallSineX[2*i+1] * wallSineY[2*j];
+                if ( i==exitX && j==0 && k==zsize-1 )
+                    addSquare(i,j,k,0,0,1,1,0,0, .3,.7,1.);
+                else if ( (j<ysize) ? (! (maze[i][j][k]&8)) : 1 )
+                    addSquare(i,j,k,0,0,1,1,0,0,
+                              lc(l,sideColor[0]),lc(l,sideColor[1]),lc(l,sideColor[2]));
+            }
+        }
+    }
+    // Feed the triangles to WebGL:
+    gl.bindBuffer(gl.ARRAY_BUFFER, vposBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vpos, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(vposAttribute, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vcolBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vcol, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(vcolAttribute, 3, gl.FLOAT, false, 0, 0);
+    }
+   
+    function redraw() {  // Redraw canvas (from triangles having already been loaded).
+    "use strict";
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, nbtriangles*3);
+    }
+
+    function computeWallSine() {
+    wallSineX = new Float32Array(2*xsize+1);
+    for ( var i=0 ; i<2*xsize+2 ; i++ )
+        wallSineX[i] = Math.sin(i*Math.PI/16)
+    wallSineY = new Float32Array(2*ysize+1);
+    for ( var i=0 ; i<2*ysize+2 ; i++ )
+        wallSineY[i] = Math.sin(i*Math.PI/16)
+    }
+
+    function computeUV() {  // Compute obsu and obsv.
+    "use strict";
+    obsu = Math.cos(obsth*Math.PI/180);
+    obsv = Math.sin(obsth*Math.PI/180);
+    }
+
+    function loadViewPoint() {  // Load observer position and angle into WebGL uniforms.
+    "use strict";
+    gl.uniformMatrix4fv(rmatUniform, false, new Float32Array([
+      obsu,-obsv,0.,0.,
+      obsv,obsu,0.,0.,
+      0.,0.,1.,0.,
+      0.,0.,0.,1.,
+    ]));
+    gl.uniform3fv(oposUniform, [obsx, obsy, obsz]);
+    }
+
+    var lastTime = 0;
+
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            var elapsed = timeNow - lastTime;
+
+            // here we could change variables to adjust rotations for animation
+            xRot += 0;
+            yRot += 0;
+            zRot += 0;
+        }
+        lastTime = timeNow;
+        
+    }
+
+
+    function Frames() {
+        requestAnimFrame(Frames);
+        drawScene();
+        animate();
+    }
+
+
+</script>
+
+</head>
+
+<!-- declare the "body" of the HTML document-->
+<!-- the onload attribute specifies a javascript function to execute when the body tag is loaded into the browser -->
+
+<body onload="startHelloWebGL()">
+<h1>Project: Maze</h1>
+
+<!-- embed the HTML5 Canvas Drawing object on the page.-->
+<!-- Name the canvas 'hellowebgl' for the javascript code. -->
+<canvas id="hellowebgl" width=640 height=480>
+If you're seeing this your web browser doesn't support the &lt;canvas>&gt; element. Ouch!
+</canvas>
+
+</body>
+</html>

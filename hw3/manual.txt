@@ -1,0 +1,7 @@
+Left Mouse Click + Drag Left = camera turns left
+Left Mouse Click + Drag Right = camera turns right
+W = camera moves forward
+A = camera moves left (this will appear wonky due to the terrian not being flat)
+S = camera moves backwards
+D = camera moves right ( this will appear wonky due to the terrian not being flat)
+Mouse wheel = zoom in/out

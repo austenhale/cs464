@@ -175,7 +175,28 @@ squareVertexPositionBuffer.numItems = 4;
 
 function initTextures()
 {
+    exTexture = gl.createTexture();
+    exTexture.image = new Image();
+    // exTexture.image.crossOrigin = "anonymous";
+    
+    exTexture.image.onload = function() {
+      handleLoadedTexture(exTexture)
+    };
+    exTexture.image.src = "box.png";
 }
+
+function handleLoadedTexture(texture)
+{
+    
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    // gl.generateMipmap(gl.TEXTURE_2D);
+    
+  }
 
 //Initialize everything for starting up a simple webGL application
 function startHelloWebGL()
@@ -214,6 +235,10 @@ function drawScene(gl)
         // initialize a Perspective Projection view position.
         mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
         mat4.identity(mvMatrix);
+        
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, exTexture);
+        gl.uniform1i(shaderProgram.samplerUniform, 0);
         
         // translate the view a bit and draw the Big Translate.
         mat4.translate(mvMatrix, [-1.5, 0.0, -7.0]);

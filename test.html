@@ -16,25 +16,79 @@
     varying vec2 vTextureCoord;
 
     uniform sampler2D uSampler;
+    uniform int sourceCLR;
+    uniform int shade;
+    uniform int light;
 
     void main(void) {
-        gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+        vec4 tx_FragColor;
+        float ts = vTextureCoord.s;
+         float tt = vTextureCoord.t;
+
+            // Flat Shading
+            if (shade == 1) {
+                ts = (floor(ts*64.0))/64.0;
+                tt = (floor(tt*64.0))/64.0;
+            }
+            if (shade == 2) { // Phong
+                ts = (floor(ts*1028.0))/1028.0;
+                tt = (floor(tt*1028.0))/1028.0;
+            } // Gouraud
+            if (shade == 3) {
+
+            }
+        tx_FragColor = texture2D(uSampler, vec2(ts, tt));
+        gl_FragColor = texture2D(tx_FragColor * vLightWeighting, tx_FragColor.a);
+    }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    precision mediump float;
+
+    varying vec2 vTextureCoord;
+    varying vec3 vLightWeighting;
+    uniform sampler2D uSampler;
+
+    void main(void) {
+        vec4 tx_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+        gl_FragColor = vec4(tx_FragColor.rgb * vLightWeighting, tx_FragColor.a);
     }
 </script>
 
 <script id="shader-vs" type="x-shader/x-vertex">
     attribute vec3 aVertexPosition;
     attribute vec2 aTextureCoord;
+    attribute vec3 aVertexNormal;
 
     uniform mat4 uMVMatrix;
     uniform mat4 uPMatrix;
 
     varying vec2 vTextureCoord;
+    varying vec3 nVertexPosition;
+    uniform sampler2D uSampler;
+    varying vec4 clrVec;
+    varying vec4 nclrVec;
+
+    uniform mat3 uNMatrix;
+    uniform vec3 uAmbientColor;
+    uniform vec3 uLightingDirection;
+    uniform vec3 uDirectionalColor;
+    varying vec3 vLightWeighting;
 
 
     void main(void) {
-        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        nVertexPosition[0] = aVertexPosition[0];
+        nVertexPosition[1] = 0.5;
+        nVertexPosition[2] = aVertexPosition[2];
         vTextureCoord = aTextureCoord;
+        clrVec = texture2D(uSampler, vTextureCoord);
+        nclrVec = normalize(clrVec);
+        nVertexPosition[1] = nclrVec[0]*nclrVec[0] + nclrVec[1]*nclrVec[1]+nclrVec[2]*nclrVec[2];
+        gl_Position = uPMatrix * uMVMatrix * vec4(nVertexPosition, 1.0);
+
+        vec3 transformedNormal = uNMatrix * aVertexNormal;
+        float directionalLightWeighting = max(dot(transformedNormal, uLightingDirection), 0.0);
+        vLightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
     }
 </script>
 
@@ -137,6 +191,13 @@ function initGLScene()
         shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
         shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
         shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+        shaderProgram.tnMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix");
+
+        shaderProgram.sourceCLR = gl.getUniformLocation(shaderProgram, "sourceCLR");
+        shaderProgram.bumpBool = gl.getUniformLocation(shaderProgram, "bumpBool");
+        shaderProgram.shade = gl.getUniformLocation(shaderProgram, "shade");
+        shaderProgram.light = gl.getUniformLocation(shaderProgram, "light");
+
     }
 
 
@@ -355,7 +416,6 @@ function handleMouseMove(event) {
     if (!mouseDown) {
         return;
     }
-    console.log("MOUSE");
     var newX = event.clientX;
     var newY = event.clientY;
     
@@ -392,9 +452,11 @@ function handleMouseMove(event) {
 
         mat4.translate(mvMatrix, [0.0, 0.0, -5.0]);
 
-        mat4.rotate(mvMatrix, xRot/180.0*3.1415, [1, 0, 0]);
-        mat4.rotate(mvMatrix, yRot/180.0*3.1415, [0, 1, 0]);
-        mat4.rotate(mvMatrix, zRot/180.0*3.1415, [0, 0, 1]);
+        // mat4.rotate(mvMatrix, xRot/180.0*3.1415, [1, 0, 0]);
+        // mat4.rotate(mvMatrix, yRot/180.0*3.1415, [0, 1, 0]);
+        // mat4.rotate(mvMatrix, zRot/180.0*3.1415, [0, 0, 1]);
+
+        mat4.multiply(mvMatrix,objRotationMatrix);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
         gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
@@ -420,9 +482,9 @@ function handleMouseMove(event) {
             var elapsed = timeNow - lastTime;
 
             // here we could change variables to adjust rotations for animation
-            xRot += 1;
-            yRot += 1;
-            zRot += 1;
+            // xRot += 1;
+            // yRot += 1;
+            // zRot += 1;
         }
         lastTime = timeNow;
     }
@@ -434,7 +496,42 @@ function handleMouseMove(event) {
         animate();
     }
 
+function refresh() {
+    var asrc = document.getElementById("source") 
+    if (asrc == "texture") {
+        gl.uniform1i(shaderProgram.sourceCLR, 1);
+    }
+    else if (asrc == "math") {
+        gl.uniform1i(shaderProgram.sourceCLR, 2);
+    }
+    else if (asrc == "other") {
+        gl.uniform1i(shaderProgram.sourceCLR, 3);
+    }
 
+    var ashader = document.getElementById("shade") 
+    if (ashader == "flat") {
+        gl.uniform1i(shaderProgram.shader, 1);
+    }
+    else if (ashader == "gouraud") {
+        gl.uniform1i(shaderProgram.shader, 2);
+    }
+    else if (ashader == "phong") {
+        gl.uniform1i(shaderProgram.shader, 3);
+    }
+
+    var alight = document.getElementById("light") 
+    if (alight == "ambient") {
+        gl.uniform1i(shaderProgram.light, 1);
+    }
+    else if (alight == "diffuse") {
+        gl.uniform1i(shaderProgram.light, 2);
+    }
+    else if (alight == "phong") {
+        gl.uniform1i(shaderProgram.light, 3);
+    }
+
+    
+}
 </script>
 
 </head>
@@ -450,6 +547,36 @@ function handleMouseMove(event) {
 <canvas id="hellowebgl" width=640 height=480>
 If you're seeing this your web browser doesn't support the &lt;canvas>&gt; element. Ouch!
 </canvas>
+<br>
+<b>Shader Options:</b>
+    <table style="border: 0; padding: 5px;">
+        <tr>
+            <td><b>Options:</b></td>
+            <td>Source:
+            <select id="source" onclick="refresh()">
+            <option value="texture">Texture</option>
+            <option value="math">Math</option>
+            <option value="other">Fract</option>
+            </select>
+            </td>
+            
+            <td>Shading:
+            <select id="shade" onclick="refresh()">
+            <option value="flat">Flat</option>
+            <option value="gouraud">Gouraud</option>
+            <option value="phong">Phong</option>
+            </select>
 
+            </td>
+            <td>lighting:
+            <select id="light" onclick="refresh()">
+            <option value="ambient">Ambient Light</option>
+            <option value="diffuse">Gouraud Light</option>
+            <option value="phong">Phong Light</option>
+            </select>
+            </td>
+            <td><input type="checkbox" id="bumpBool" value="on" onclick="refresh()"/>Bump</td>
+        </tr>
+    </table>
 </body>
 </html>

@@ -1,0 +1,29 @@
+Austen Hale
+CS464
+
+List of files:
+
+    Rotate cube object in scene:
+        This is done by hellocube_rotateY.html
+    Replace the cube object with other shapes:
+        This is done by hellocube_pyramid.html
+    Texture Images:
+        This is done by hellocube_water.html, hellocube_sand.html, hellocube_brick.html as well as making use of 
+        sand.jpg, water.jpg, red+brick+wall-256x256.jpg
+    Shader Coloring:
+        This is done in hellocube_colors.html, showing three different color combinations, with pictures in
+        green_shader.png, white_shader.png, and yellow_shadow.png
+
+Awesome WebGL functions:
+    I didn't use any WebGL functions that were out of the ordinary, but the rotate function to make the objects
+    rotate was awesome to see for the first time, turning a static picture into a rotating image.
+
+Extra credit:
+    Not attempted.
+
+Misc:
+    This was a neat starting assignment. The parts I struggled with most was creating a different shape using the vertices and the texture mapping; 
+    the different shape took awhile to get the right combination in order to make a shape that wasn't a box. As for the texture mapping, it became a lot
+    easier when I realized that the code was already completed, I just had to get a live server running (in my case I used Visual Studio Code's live server
+    extension) and once the server was running, the texture mapping finally worked. I didn't work with any other students, and I used the class textbook to
+    help with the assignment.

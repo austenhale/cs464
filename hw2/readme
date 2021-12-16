@@ -1,0 +1,22 @@
+Austen Hale
+CS464
+HW2
+
+List of files:
+
+    hellocube_grid_mouse_texture.html - This is the only file, showscases lighting, mouse turning and zooming with the wheel, and the grids/height maps.
+
+Awesome WebGL functions:
+    I didn't use any WebGL functions that were out of the ordinary, but the it was fun to be able to manually rotate the image, and zoom with the mouse.
+
+Extra credit:
+    Not attempted.
+
+Misc:
+    This assignment wasn't too bad (for the parts I completed). I was unable to get the ambient light to work in a way that seemed right. Setting the ambient uniform
+    to be [0.0, 2.0, 0.0] in drawScene() resulted in the entire object being green, which didn't seem right. Nonetheless, the lighting of the object does change as it
+    moves, becoming darker in some directions, and lighter in the other directions.
+
+    I did look up how to determine if mouse wheel up or down was used for the zooming, which said event.deltaY changes based on scroll direction 
+    (https://stackoverflow.com/questions/63043172/webgl-three-js-canvas-zoom-in-and-out-with-mousewheel). I used that logic to change the 
+    distance from the object whenever the mouse wheel is wheeled.

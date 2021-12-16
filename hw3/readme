@@ -1,0 +1,23 @@
+Austen Hale
+CS464
+HW3
+
+List of files:
+
+    hellocube_a3.html- This is the only html file, showing the camera start in the texture, change based on the terrian height, and allow the camaera to move based on WASD keys.
+    sand.jpg - the texture used.
+    camera.pngs - This shows the camera at different points in the texture field, after moving around.
+
+Awesome WebGL functions:
+    I didn't use any WebGL functions that were out of the ordinary.
+
+Extra credit:
+    Not attempted.
+
+Misc:
+    This assignment was definetly harder than the previous assignments. I couldn't figure out a way to make the textures not spikey, so when the camera changes
+    upon moving in any direction, the camera gets a bit janky with all the switching, so sorry about that! Other than that, the camaera as shown will change based
+    on the height of the terrian, and it's possible to look around with the mouse, and move with WASD. One thing to note that since there isn't any flat terrian, and that
+    A and D move left/right without changing the camera to look in the left/right direction, moving with them may look like the camera isn't moving, but it is.
+    I used: https://stackoverflow.com/questions/1846599/how-to-find-out-what-character-key-is-pressed to figure out which key was pressed in JavaScript for moving 
+    the camera with WASD.
